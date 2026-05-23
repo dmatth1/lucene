@@ -16,7 +16,6 @@
  */
 package org.apache.lucene.benchmark.jmh;
 
-import java.util.Random;
 import java.util.concurrent.TimeUnit;
 import org.apache.lucene.codecs.bloom.FuzzySet;
 import org.apache.lucene.codecs.bloom.SBBFuzzySet;
@@ -50,21 +49,34 @@ import org.openjdk.jmh.infra.Blackhole;
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
 @Warmup(iterations = 3, time = 2, timeUnit = TimeUnit.SECONDS)
 @Measurement(iterations = 5, time = 2, timeUnit = TimeUnit.SECONDS)
-@Fork(value = 3, jvmArgsAppend = "-Xmx2g")
+@Fork(value = 3, jvmArgsAppend = "-Xmx4g")
 @State(Scope.Benchmark)
 public class BloomFilterProbeBenchmark {
 
   @Param({"S", "M", "L", "XL"})
   public String tier;
 
+  /**
+   * {@code miss} is the dominant pattern for a primary-key existence check (the term is in some
+   * other segment); {@code hit} is the term-is-here case.
+   */
   @Param({"miss", "hit"})
   public String workload;
 
   @Param({"sbbf", "classical"})
   public String impl;
 
-  private static final float TARGET_FPP = 0.01f;
-  private static final int MAX_INSERTED = 1 << 20;
+  /**
+   * {@code 0.1023} is Lucene's {@link
+   * org.apache.lucene.codecs.bloom.DefaultBloomFilterFactory} default (classical K is then ~4-6);
+   * {@code 0.01} is a stricter target that drives classical K up to ~7-12 and so flatters a
+   * fixed-K=8 SBBF.
+   */
+  @Param({"0.1023", "0.01"})
+  public float fpp;
+
+  /** Cap on the hit probe-set size so XL stays within heap; the filter is still filled to {@code n}. */
+  private static final int MAX_PROBE_KEYS = 1 << 20;
 
   private SBBFuzzySet sbbf;
   private FuzzySet classical;
@@ -79,44 +91,55 @@ public class BloomFilterProbeBenchmark {
           case "S" -> 16_384;
           case "M" -> 262_144;
           case "L" -> 4_194_304;
-          case "XL" -> 67_108_864;
+          case "XL" -> 16_777_216;
           default -> throw new IllegalArgumentException("unknown tier: " + tier);
         };
 
     isSbbf = "sbbf".equals(impl);
     if (isSbbf) {
-      sbbf = SBBFuzzySet.createOptimalSet(n, TARGET_FPP);
+      sbbf = SBBFuzzySet.createOptimalSet(n, fpp);
     } else {
-      classical = FuzzySet.createOptimalSet(n, TARGET_FPP);
+      classical = FuzzySet.createOptimalSet(n, fpp);
     }
 
-    int inserted = Math.min(n, MAX_INSERTED);
-    BytesRef[] insertedKeys = new BytesRef[inserted];
-    Random r = new Random(0xCAFEBABEL);
-    for (int i = 0; i < inserted; i++) {
-      BytesRef key = randomKey(r);
-      insertedKeys[i] = key;
+    // Fill the filter to its design point: insert all n distinct keys so saturation is realistic.
+    // Keep a bounded sample of inserted keys for the hit probe set.
+    int sampleEvery = Math.max(1, n / MAX_PROBE_KEYS);
+    int sampleSize = (n + sampleEvery - 1) / sampleEvery;
+    BytesRef[] hitSample = new BytesRef[sampleSize];
+    int s = 0;
+    for (int i = 0; i < n; i++) {
+      BytesRef key = distinctKey(i);
       if (isSbbf) {
         sbbf.addValue(key);
       } else {
         classical.addValue(key);
       }
+      if (i % sampleEvery == 0 && s < hitSample.length) {
+        hitSample[s++] = key;
+      }
     }
 
     if ("hit".equals(workload)) {
-      probeKeys = insertedKeys;
+      probeKeys = hitSample;
     } else {
       probeKeys = new BytesRef[1 << 14];
-      Random r2 = new Random(0xDEADBEEFL);
       for (int i = 0; i < probeKeys.length; i++) {
-        probeKeys[i] = randomKey(r2);
+        // Keys outside the inserted [0, n) domain: definite non-members (modulo the filter's FP).
+        probeKeys[i] = distinctKey(n + 0x5000_0000L + i);
       }
     }
   }
 
-  private static BytesRef randomKey(Random r) {
+  /** A deterministic, distinct 16-byte key for ordinal {@code i}. */
+  private static BytesRef distinctKey(long i) {
     byte[] k = new byte[16];
-    r.nextBytes(k);
+    long a = i * 0x9E3779B97F4A7C15L;
+    long b = (i ^ 0xD1B54A32D192ED03L) * 0xBF58476D1CE4E5B9L;
+    for (int j = 0; j < 8; j++) {
+      k[j] = (byte) (a >>> (8 * j));
+      k[8 + j] = (byte) (b >>> (8 * j));
+    }
     return new BytesRef(k);
   }
 
