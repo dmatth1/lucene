@@ -100,6 +100,13 @@ API Changes
 
 New Features
 ---------------------
+* Add SBBFBloomFilteringPostingsFormat, an additive, opt-in postings format backing its per-field
+  bloom filter with a Split Block Bloom Filter (SBBFuzzySet, Apache Parquet layout, K=8, Wyhash
+  probe). It clusters all probe bits for a key into one 256-bit block so every contains() touches a
+  single cache line, versus the up-to-K cache lines of the classical FuzzySet. The format coexists
+  with BloomFilteringPostingsFormat (distinct codec name and .sblm file) so existing indexes are
+  unaffected. A microbench (BloomFilterProbeBenchmark) measures per-probe latency against FuzzySet.
+
 * GITHUB#15505: Upgrade snowball to 2d2e312df56f2ede014a4ffb3e91e6dea43c24be. New stemmer: PolishStemmer (and
   PolishSnowballAnalyzer in the stempel package) (Justas Sakalauskas, Dawid Weiss)
 

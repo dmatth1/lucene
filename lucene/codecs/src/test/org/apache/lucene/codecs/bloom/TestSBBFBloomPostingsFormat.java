@@ -14,21 +14,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.lucene.codecs.bloom;
 
-/** Lucene JMH benchmarks. */
+import org.apache.lucene.codecs.Codec;
+import org.apache.lucene.tests.codecs.bloom.TestSBBFBloomFilteredLucenePostings;
+import org.apache.lucene.tests.index.BasePostingsFormatTestCase;
+import org.apache.lucene.tests.util.TestUtil;
 
-// jmh.core is not modularized and causes a warning. Suppressing it until it is modularized.
-@SuppressWarnings("requires-automatic")
-module org.apache.lucene.benchmark.jmh {
-  requires jmh.core;
-  requires jdk.unsupported;
-  requires org.apache.lucene.core;
-  requires org.apache.lucene.codecs;
-  requires org.apache.lucene.expressions;
-  requires org.apache.lucene.join;
-  requires org.apache.lucene.sandbox;
-  requires commons.math3;
+/** Basic tests for {@link SBBFBloomFilteringPostingsFormat}. */
+public class TestSBBFBloomPostingsFormat extends BasePostingsFormatTestCase {
+  private final Codec codec =
+      TestUtil.alwaysPostingsFormat(new TestSBBFBloomFilteredLucenePostings());
 
-  exports org.apache.lucene.benchmark.jmh;
-  exports org.apache.lucene.benchmark.jmh.jmh_generated;
+  @Override
+  protected Codec getCodec() {
+    return codec;
+  }
 }
