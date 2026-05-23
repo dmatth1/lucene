@@ -29,7 +29,7 @@ import java.nio.ByteOrder;
  *
  * @lucene.experimental
  */
-final class Wyhash {
+public final class Wyhash {
 
   private static final long M = 0x880355f21e6d1965L;
 
@@ -42,16 +42,16 @@ final class Wyhash {
 
   private Wyhash() {}
 
-  static long hash(byte[] data, int offset, int length, long seed) {
+  public static long hash(byte[] data, int offset, int length, long seed) {
     return length == 16 ? hash16(data, offset, seed) : hashVar(data, offset, length, seed);
   }
 
-  static long hash16(byte[] data, int offset, long seed) {
+  public static long hash16(byte[] data, int offset, long seed) {
     return mix128(readLong(data, offset), readLong(data, offset + 8), seed);
   }
 
   @SuppressWarnings("fallthrough")
-  static long hashVar(byte[] data, int offset, int length, long seed) {
+  public static long hashVar(byte[] data, int offset, int length, long seed) {
     long h = (long) length * M ^ seed;
     int nblocks = length >>> 3;
     for (int i = 0; i < nblocks; i++) {
